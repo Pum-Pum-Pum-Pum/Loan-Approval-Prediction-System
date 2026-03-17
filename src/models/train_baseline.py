@@ -29,7 +29,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def build_pipeline() -> Pipeline:
+def build_preprocessor() -> ColumnTransformer:
     numeric_features = [
         'ApplicantIncome',
         'CoapplicantIncome',
@@ -58,30 +58,46 @@ def build_pipeline() -> Pipeline:
         ('onehot', OneHotEncoder(handle_unknown='ignore')),
     ])
 
-    preprocessor = ColumnTransformer(transformers=[
+    return ColumnTransformer(transformers=[
         ('num', numeric_transformer, numeric_features),
         ('cat', categorical_transformer, categorical_features),
     ])
 
+
+def build_model(class_weight=None) -> Pipeline:
     return Pipeline(steps=[
-        ('preprocessor', preprocessor),
-        ('classifier', LogisticRegression(max_iter=1000, random_state=42)),
+        ('preprocessor', build_preprocessor()),
+        ('classifier', LogisticRegression(max_iter=1000, random_state=42, class_weight=class_weight)),
     ])
 
 
-def evaluate_model(model: Pipeline, X_valid: pd.DataFrame, y_valid: pd.Series) -> None:
+def get_metrics(model: Pipeline, X_valid: pd.DataFrame, y_valid: pd.Series) -> dict:
     y_pred = model.predict(X_valid)
     y_prob = model.predict_proba(X_valid)[:, 1]
 
-    print(f'Accuracy : {accuracy_score(y_valid, y_pred):.4f}')
-    print(f'Precision: {precision_score(y_valid, y_pred):.4f}')
-    print(f'Recall   : {recall_score(y_valid, y_pred):.4f}')
-    print(f'F1-score : {f1_score(y_valid, y_pred):.4f}')
-    print(f'ROC-AUC  : {roc_auc_score(y_valid, y_prob):.4f}')
+    return {
+        'accuracy': accuracy_score(y_valid, y_pred),
+        'precision': precision_score(y_valid, y_pred),
+        'recall': recall_score(y_valid, y_pred),
+        'f1': f1_score(y_valid, y_pred),
+        'roc_auc': roc_auc_score(y_valid, y_prob),
+        'confusion_matrix': confusion_matrix(y_valid, y_pred),
+        'classification_report': classification_report(y_valid, y_pred),
+    }
+
+
+def print_metrics(name: str, metrics: dict) -> None:
+    print(f'\n{name}')
+    print('-' * len(name))
+    print(f"Accuracy : {metrics['accuracy']:.4f}")
+    print(f"Precision: {metrics['precision']:.4f}")
+    print(f"Recall   : {metrics['recall']:.4f}")
+    print(f"F1-score : {metrics['f1']:.4f}")
+    print(f"ROC-AUC  : {metrics['roc_auc']:.4f}")
     print('\nConfusion Matrix:')
-    print(confusion_matrix(y_valid, y_pred))
+    print(metrics['confusion_matrix'])
     print('\nClassification Report:')
-    print(classification_report(y_valid, y_pred))
+    print(metrics['classification_report'])
 
 
 def main() -> None:
@@ -98,9 +114,40 @@ def main() -> None:
         X, y, test_size=0.2, stratify=y, random_state=42
     )
 
-    model = build_pipeline()
-    model.fit(X_train, y_train)
-    evaluate_model(model, X_valid, y_valid)
+    baseline_model = build_model(class_weight=None)
+    weighted_model = build_model(class_weight='balanced')
+
+    baseline_model.fit(X_train, y_train)
+    weighted_model.fit(X_train, y_train)
+
+    baseline_metrics = get_metrics(baseline_model, X_valid, y_valid)
+    weighted_metrics = get_metrics(weighted_model, X_valid, y_valid)
+
+    print_metrics('Baseline Logistic Regression', baseline_metrics)
+    print_metrics('Weighted Logistic Regression', weighted_metrics)
+
+    comparison = pd.DataFrame([
+        {
+            'model': 'baseline_logistic',
+            'accuracy': baseline_metrics['accuracy'],
+            'precision': baseline_metrics['precision'],
+            'recall': baseline_metrics['recall'],
+            'f1': baseline_metrics['f1'],
+            'roc_auc': baseline_metrics['roc_auc'],
+        },
+        {
+            'model': 'weighted_logistic',
+            'accuracy': weighted_metrics['accuracy'],
+            'precision': weighted_metrics['precision'],
+            'recall': weighted_metrics['recall'],
+            'f1': weighted_metrics['f1'],
+            'roc_auc': weighted_metrics['roc_auc'],
+        },
+    ])
+
+    print('\nMetric Comparison:')
+    print(comparison.to_string(index=False, float_format=lambda x: f'{x:.4f}'))
+
 
 if __name__ == '__main__':
     main()
