@@ -102,6 +102,5 @@ def main() -> None:
     model.fit(X_train, y_train)
     evaluate_model(model, X_valid, y_valid)
 
-
 if __name__ == '__main__':
     main()
