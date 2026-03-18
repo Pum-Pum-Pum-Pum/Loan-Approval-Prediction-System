@@ -19,6 +19,9 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, StandardScaler
 
 
+THRESHOLDS = [0.30, 0.40, 0.50, 0.60, 0.70]
+
+
 def load_data(data_path: Path) -> pd.DataFrame:
     return pd.read_csv(data_path)
 
@@ -71,19 +74,29 @@ def build_model(class_weight=None) -> Pipeline:
     ])
 
 
-def get_metrics(model: Pipeline, X_valid: pd.DataFrame, y_valid: pd.Series) -> dict:
-    y_pred = model.predict(X_valid)
-    y_prob = model.predict_proba(X_valid)[:, 1]
+def get_metrics_from_predictions(y_true: pd.Series, y_pred: np.ndarray, y_prob: np.ndarray) -> dict:
+    cm = confusion_matrix(y_true, y_pred)
+    tn, fp, fn, tp = cm.ravel()
 
     return {
-        'accuracy': accuracy_score(y_valid, y_pred),
-        'precision': precision_score(y_valid, y_pred),
-        'recall': recall_score(y_valid, y_pred),
-        'f1': f1_score(y_valid, y_pred),
-        'roc_auc': roc_auc_score(y_valid, y_prob),
-        'confusion_matrix': confusion_matrix(y_valid, y_pred),
-        'classification_report': classification_report(y_valid, y_pred),
+        'accuracy': accuracy_score(y_true, y_pred),
+        'precision': precision_score(y_true, y_pred, zero_division=0),
+        'recall': recall_score(y_true, y_pred, zero_division=0),
+        'f1': f1_score(y_true, y_pred, zero_division=0),
+        'roc_auc': roc_auc_score(y_true, y_prob),
+        'tn': tn,
+        'fp': fp,
+        'fn': fn,
+        'tp': tp,
+        'confusion_matrix': cm,
+        'classification_report': classification_report(y_true, y_pred, zero_division=0),
     }
+
+
+def get_metrics(model: Pipeline, X_valid: pd.DataFrame, y_valid: pd.Series) -> dict:
+    y_prob = model.predict_proba(X_valid)[:, 1]
+    y_pred = (y_prob >= 0.50).astype(int)
+    return get_metrics_from_predictions(y_valid, y_pred, y_prob)
 
 
 def print_metrics(name: str, metrics: dict) -> None:
@@ -98,6 +111,25 @@ def print_metrics(name: str, metrics: dict) -> None:
     print(metrics['confusion_matrix'])
     print('\nClassification Report:')
     print(metrics['classification_report'])
+
+
+def threshold_analysis(y_true: pd.Series, y_prob: np.ndarray, thresholds: list[float]) -> pd.DataFrame:
+    rows = []
+    for threshold in thresholds:
+        y_pred = (y_prob >= threshold).astype(int)
+        metrics = get_metrics_from_predictions(y_true, y_pred, y_prob)
+        rows.append({
+            'threshold': threshold,
+            'accuracy': metrics['accuracy'],
+            'precision': metrics['precision'],
+            'recall': metrics['recall'],
+            'f1': metrics['f1'],
+            'fp': metrics['fp'],
+            'fn': metrics['fn'],
+            'tp': metrics['tp'],
+            'tn': metrics['tn'],
+        })
+    return pd.DataFrame(rows)
 
 
 def main() -> None:
@@ -147,6 +179,12 @@ def main() -> None:
 
     print('\nMetric Comparison:')
     print(comparison.to_string(index=False, float_format=lambda x: f'{x:.4f}'))
+
+    weighted_prob = weighted_model.predict_proba(X_valid)[:, 1]
+    threshold_df = threshold_analysis(y_valid, weighted_prob, THRESHOLDS)
+
+    print('\nThreshold Analysis for Weighted Logistic Regression:')
+    print(threshold_df.to_string(index=False, float_format=lambda x: f'{x:.4f}'))
 
 
 if __name__ == '__main__':
