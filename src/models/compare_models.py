@@ -20,7 +20,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, StandardScaler
 
 
-RANDOM_STATE = 42
+RANDOM_STATE = 21
 
 
 def load_data(data_path: Path) -> pd.DataFrame:
