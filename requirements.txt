@@ -1,8 +1,9 @@
-﻿numpy
+﻿fastapi
+uvicorn
+numpy
 pandas
 matplotlib
 seaborn
 scikit-learn
 scipy
 joblib
-openpyxl
